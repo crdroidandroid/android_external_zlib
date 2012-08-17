@@ -884,9 +884,16 @@ int ZEXPORT deflate (strm, flush)
      * flushes. For repeated and useless calls with Z_FINISH, we keep
      * returning Z_STREAM_END instead of Z_BUF_ERROR.
      */
-    } else if (strm->avail_in == 0 && RANK(flush) <= RANK(old_flush) &&
-               flush != Z_FINISH) {
-        ERR_RETURN(strm, Z_BUF_ERROR);
+    } else if (strm->avail_in == 0 && flush != Z_FINISH) {
+        char err;
+
+        /* Degrade Z_BLOCK only when last flush was Z_BLOCK */
+        err = (old_flush == Z_BLOCK) ?
+              RANK(flush) <= RANK(old_flush) : flush <= old_flush;
+
+        if (err) {
+            ERR_RETURN(strm, Z_BUF_ERROR);
+        }
     }
 
     /* User must not provide more input after the first FINISH: */
