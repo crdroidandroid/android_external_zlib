@@ -210,20 +210,50 @@ local void slide_hash(s)
 
     n = s->hash_size;
     p = &s->head[n];
-    do {
-        m = *--p;
-        *p = (Pos)(m >= wsize ? m - wsize : NIL);
-    } while (--n);
+
+    /* As of I make this change, gcc (4.8.*) isn't able to vectorize
+     * this hot loop using saturated-subtraction on x86-64 architecture.
+     * To avoid this defect, we can change the loop such that
+     *    o. the pointer advance forward, and
+     *    o. demote the variable 'm' to be local to the loop, and
+     *       choose type "Pos" (instead of 'unsigned int') for the
+     *       variable to avoid unncessary zero-extension.
+     */
+    {
+        unsigned i;
+        typeof(p) q = p - n;
+        for (i = 0; i < n; i++) {
+            Pos m = *q;
+            Pos t = wsize;
+            *q++ = (Pos)(m >= t ? m-t: NIL);
+        }
+    }
+
+    /* The following three assignments are unnecessary as the variable
+     * p, n and m are dead at this point. The rationale for these
+     * statements is to ease the reader to verify the two loops are
+     * equivalent.
+     */
+    p = p - n;
+    n = 0;
+    m = *p;
+
     n = wsize;
 #ifndef FASTEST
     p = &s->prev[n];
-    do {
-        m = *--p;
-        *p = (Pos)(m >= wsize ? m - wsize : NIL);
-        /* If n is not on any hash chain, prev[n] is garbage but
-         * its value will never be used.
-         */
-    } while (--n);
+
+    {
+        unsigned i;
+        typeof(p) q = p - n;
+        for (i = 0; i < n; i++) {
+            Pos m = *q;
+            Pos t = wsize;
+            *q++ = (Pos)(m >= t ? m-t: NIL);
+        }
+        p = p - n;
+        m = *p;
+        n = 0;
+    }
 #endif
 }
 
