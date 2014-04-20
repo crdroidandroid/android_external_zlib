@@ -171,9 +171,19 @@ local void gen_trees_header OF((void));
  * Output a short LSB first on the stream.
  * IN assertion: there is enough room in pendingBuf.
  */
+
+/* Compared to the else-clause's implementation, there are few advantages:
+ *  - s->pending is loaded only once (else-clause's implementation needs to
+ *    load s->pending twice due to the alias between s->pending and
+ *    s->pending_buf[].
+ *  - no instructions for extracting bytes from short.
+ *  - needs less registers
+ *  - stores to adjacent bytes are merged into a single store, albeit at the
+ *    cost of penalty of potentially unaligned access.
+ */
 #define put_short(s, w) { \
-    put_byte(s, (uch)((w) & 0xff)); \
-    put_byte(s, (uch)((ush)(w) >> 8)); \
+    s->pending += 2; \
+    *(ush*)(&s->pending_buf[s->pending - 2]) = (w) ; \
 }
 
 /* ===========================================================================
