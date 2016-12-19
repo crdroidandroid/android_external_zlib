@@ -24,7 +24,7 @@ zlib_files := \
 
 LOCAL_MODULE := libz
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS += -O3 -DUSE_MMAP
+LOCAL_CFLAGS += -O3 -DUSE_MMAP -DZLIB_CONST
 
 # TODO: This is to work around b/24465209. Remove after root cause is fixed
 LOCAL_LDFLAGS_arm := -Wl,--hash-style=both
