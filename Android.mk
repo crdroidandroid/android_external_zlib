@@ -22,7 +22,7 @@ zlib_files := \
 	src/uncompr.c \
 	src/zutil.c
 
-zlib_cflags := -O3 -DUSE_MMAP
+zlib_cflags := -O3 -DUSE_MMAP -DZLIB_CONST
 
 LOCAL_MODULE := libz
 LOCAL_MODULE_TAGS := optional
