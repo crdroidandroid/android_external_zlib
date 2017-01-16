@@ -86,7 +86,6 @@
 #   include <errno.h>
 #endif
 
-#include <sys/stat.h>
 
 #ifndef local
 #  define local static

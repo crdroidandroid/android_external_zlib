@@ -240,7 +240,6 @@ local unsigned long crc32_aarch64(crc, buf, len)
     return crc ^ 0xffffffffUL;
 }
 #endif
-
 unsigned long ZEXPORT crc32_z(crc, buf, len)
     unsigned long crc;
     const unsigned char FAR *buf;
@@ -290,7 +289,6 @@ void __attribute__ ((constructor)) init_cpu_support_flag(void) {
     }
 }
 #endif
-
 /* ========================================================================= */
 unsigned long ZEXPORT crc32(crc, buf, len)
     unsigned long crc;
