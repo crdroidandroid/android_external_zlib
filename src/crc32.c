@@ -297,7 +297,12 @@ unsigned long ZEXPORT crc32(crc, buf, len)
     const unsigned char FAR *buf;
     uInt len;
 {
+#ifdef ARMv8CRC
+#  pragma message("Using ARMv8 CRC32 instruction.")
+    return armv8_crc32_little(crc, buf, len);
+#else
     return crc32_func(crc, buf, len);
+#endif
 }
 
 #ifdef BYFOUR
