@@ -16,6 +16,7 @@ cflags_arm = [
     // Testing with zlib_bench shows -O3 is a win for ARM but a bit of a wash
     // for x86, so match the BUILD file in only enabling this for ARM.
     "-O3",
+    "-funroll-loops",
 ]
 cflags_arm_neon = [
     // We no longer support non-Neon platform builds, but the NDK only has one
