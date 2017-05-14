@@ -71,6 +71,7 @@ cc_library {
         "-DHAVE_HIDDEN",
         // We do support const, so turn that on.
         "-DZLIB_CONST",
+        "-DUNALIGNED_OK",
         "-Wall",
         "-Werror",
         "-Wno-unused",
