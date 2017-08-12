@@ -22,9 +22,11 @@ zlib_files := \
 	src/uncompr.c \
 	src/zutil.c
 
+zlib_cflags := -O3 -DUSE_MMAP -DZLIB_CONST -DUNALIGNED_OK -DZLIB_ARMv8
+
 LOCAL_MODULE := libz
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS += -O3 -DUSE_MMAP -DZLIB_CONST -DUNALIGNED_OK
+LOCAL_CFLAGS += $(zlib_cflags)
 LOCAL_CFLAGS_arm64 += -mcpu=generic+crc
 
 # TODO: This is to work around b/24465209. Remove after root cause is fixed
@@ -40,7 +42,7 @@ include $(CLEAR_VARS)
 LOCAL_ARM_MODE := arm
 LOCAL_MODULE := libz
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS += -O3 -DUSE_MMAP
+LOCAL_CFLAGS += $(zlib_cflags)
 LOCAL_SRC_FILES := $(zlib_files)
 LOCAL_CXX_STL := none
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
@@ -50,7 +52,7 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := libz
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS += -O3 -DUSE_MMAP
+LOCAL_CFLAGS += $(zlib_cflags)
 LOCAL_CFLAGS_arm64 += -mcpu=generic+crc
 LOCAL_SRC_FILES := $(zlib_files)
 LOCAL_MULTILIB := both
@@ -63,7 +65,7 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := libz-host
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS += -O3 -DUSE_MMAP
+LOCAL_CFLAGS += $(zlib_cflags)
 LOCAL_SRC_FILES := $(zlib_files)
 LOCAL_MULTILIB := both
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)

@@ -185,6 +185,15 @@ local const config configuration_table[10] = {
     s->head[h] = (Pos)(str))
 #endif
 
+__attribute__ ((always_inline)) local void
+bulk_insert_str(deflate_state *s, uInt* ins_h, Pos startpos, uInt count) {
+    uInt idx;
+    for (idx = 0; idx < count; idx++) {
+        Posf dummy;
+        INSERT_STRING(s, *ins_h, startpos + idx, dummy);
+    }
+}
+
 /* ===========================================================================
  * Initialize the hash table (avoiding 64K overflow for 16 bit systems).
  * prev[] will be initialized on the fly.
@@ -210,20 +219,50 @@ local void slide_hash(s)
 
     n = s->hash_size;
     p = &s->head[n];
-    do {
-        m = *--p;
-        *p = (Pos)(m >= wsize ? m - wsize : NIL);
-    } while (--n);
+
+    /* As of I make this change, gcc (4.8.*) isn't able to vectorize
+     * this hot loop using saturated-subtraction on x86-64 architecture.
+     * To avoid this defect, we can change the loop such that
+     *    o. the pointer advance forward, and
+     *    o. demote the variable 'm' to be local to the loop, and
+     *       choose type "Pos" (instead of 'unsigned int') for the
+     *       variable to avoid unncessary zero-extension.
+     */
+    {
+        unsigned i;
+        typeof(p) q = p - n;
+        for (i = 0; i < n; i++) {
+            Pos m = *q;
+            Pos t = wsize;
+            *q++ = (Pos)(m >= t ? m-t: NIL);
+        }
+    }
+
+    /* The following three assignments are unnecessary as the variable
+     * p, n and m are dead at this point. The rationale for these
+     * statements is to ease the reader to verify the two loops are
+     * equivalent.
+     */
+    p = p - n;
+    n = 0;
+    m = *p;
+
     n = wsize;
 #ifndef FASTEST
     p = &s->prev[n];
-    do {
-        m = *--p;
-        *p = (Pos)(m >= wsize ? m - wsize : NIL);
-        /* If n is not on any hash chain, prev[n] is garbage but
-         * its value will never be used.
-         */
-    } while (--n);
+
+    {
+        unsigned i;
+        typeof(p) q = p - n;
+        for (i = 0; i < n; i++) {
+            Pos m = *q;
+            Pos t = wsize;
+            *q++ = (Pos)(m >= t ? m-t: NIL);
+        }
+        p = p - n;
+        m = *p;
+        n = 0;
+    }
 #endif
 }
 
@@ -1998,7 +2037,6 @@ local block_state deflate_slow(s, flush)
          */
         if (s->prev_length >= MIN_MATCH && s->match_length <= s->prev_length) {
             uInt max_insert = s->strstart + s->lookahead - MIN_MATCH;
-            uInt t_ins_h;
             /* Do not insert strings in hash table beyond this. */
 
             check_match(s, s->strstart-1, s->prev_match, s->prev_length);
@@ -2012,17 +2050,21 @@ local block_state deflate_slow(s, flush)
              * the hash table.
              */
             s->lookahead -= s->prev_length-1;
-            s->prev_length -= 2;
-            t_ins_h = s->ins_h;
-            do {
-                if (++s->strstart <= max_insert) {
-                    INSERT_STRING(s, t_ins_h, s->strstart, hash_head);
-                }
-            } while (--s->prev_length != 0);
-            s->ins_h = t_ins_h;
-            s->match_available = 0;
-            s->match_length = MIN_MATCH-1;
-            s->strstart++;
+
+            {
+                uInt mov_fwd = s->prev_length - 2;
+                uInt insert_cnt = mov_fwd;
+                uInt t_ins_h = s->ins_h;
+                if (unlikely(insert_cnt > max_insert - s->strstart))
+                    insert_cnt = max_insert - s->strstart;
+
+                bulk_insert_str(s, &t_ins_h, s->strstart + 1, insert_cnt);
+                s->ins_h = t_ins_h;
+                s->prev_length = 0;
+                s->match_available = 0;
+                s->match_length = MIN_MATCH-1;
+                s->strstart += mov_fwd + 1;
+            }
 
             if (bflush) FLUSH_BLOCK(s, 0);
 
