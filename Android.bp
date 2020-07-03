@@ -64,7 +64,6 @@ cc_library {
         support_system_process: true,
     },
     recovery_available: true,
-    native_bridge_supported: true,
 
     cflags: [
         // We do support hidden visibility, so turn that on.
