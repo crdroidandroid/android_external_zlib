@@ -34,3 +34,19 @@ uint32_t ZLIB_INTERNAL armv8_crc32_little(unsigned long crc,
                                           const unsigned char* buf,
                                           z_size_t len);
 
+/* aarch64 specific code. */
+#if defined(__aarch64__)
+
+/* 128 is the sweet spot at the time of coding (late 2020). */
+#define Z_CRC32_PMULL_MINIMUM_LENGTH 128
+#define Z_CRC32_PMULL_CHUNKSIZE_MASK 15
+
+/*
+ * CRC32 checksums using ARMv8-a PMULL instructions, where the buffer
+ * length must be at least 64, and a multiple of 16.
+ */
+uint32_t ZLIB_INTERNAL armv8_crc32_pmull_little(unsigned long crc,
+                                                const unsigned char* buf,
+                                                size_t len);
+
+#endif

@@ -290,8 +290,23 @@ unsigned long ZEXPORT crc32(crc, buf, len)
         return 0UL;
     }
 
-    if (arm_cpu_enable_crc32)
-        return armv8_crc32_little(crc, buf, len);
+    if (arm_cpu_enable_crc32) {
+#if defined(__aarch64__)
+    /* Use NEON PMULL: need at least a 64 bytes buffer. */
+    if (arm_cpu_enable_pmull && (len > Z_CRC32_PMULL_MINIMUM_LENGTH)) {
+        const size_t chunk_size = len & ~Z_CRC32_PMULL_CHUNKSIZE_MASK;
+        crc = ~armv8_crc32_pmull_little(~(uint32_t)crc, buf, chunk_size);
+        /* Check remaining data. */
+        len -= chunk_size;
+        if (!len)
+            return crc;
+
+        /* Fall through for the remaining data. */
+        buf += chunk_size;
+    }
+#endif
+    return armv8_crc32_little(crc, buf, len);
+    }
 #endif
     return crc32_z(crc, buf, len);
 }
