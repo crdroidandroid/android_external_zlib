@@ -201,6 +201,20 @@ cc_binary_host {
     stl: "none",
 }
 
+cc_binary {
+    name: "zlib_bench",
+    srcs: ["contrib/bench/zlib_bench.cc"],
+    cflags: ["-Wall", "-Werror"],
+    host_supported: true,
+    shared_libs: ["libz"],
+    // We build zlib_bench32 and zlib_bench64 so it's easy to test LP32.
+    compile_multilib: "both",
+    multilib: {
+        lib32: { suffix: "32", },
+        lib64: { suffix: "64", },
+    },
+}
+
 // This module is defined in development/ndk/Android.bp. Updating these headers
 // to be usable for any API level is going to be some work (at the very least,
 // there's a ZLIB_VERNUM that will need to be handled since early versions of
