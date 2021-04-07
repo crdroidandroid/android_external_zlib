@@ -1,0 +1,244 @@
+srcs_arm = [
+    "arch/arm/armfeature.c",
+    "arch/arm/crc32_acle.c",
+    "arch/arm/insert_string_acle.c",
+    "arch/arm/adler32_neon.c",
+    "arch/arm/chunkset_neon.c",
+    "arch/arm/slide_neon.c",
+]
+
+// Not all CPUs will support these features, but compatibility is checked at runtime.
+cflags_arm = [
+    "-DARM_ACLE_CRC_HASH",
+    "-DARM_FEATURES",
+    "-DARM_NEON_ADLER32",
+    "-DARM_NEON_CHUNKSET",
+    "-DARM_NEON_SLIDEHASH",
+]
+
+srcs_x86 = [
+    "arch/x86/x86.c",
+    "arch/x86/slide_avx.c",
+    "arch/x86/chunkset_avx.c",
+    "arch/x86/compare258_avx.c",
+    "arch/x86/adler32_avx.c",
+    "arch/x86/insert_string_sse.c",
+    "arch/x86/compare258_sse.c",
+    "arch/x86/chunkset_sse.c",
+    "arch/x86/slide_sse.c",
+    "arch/x86/adler32_ssse3.c",
+    "arch/x86/crc_folding.c",
+]
+
+cflags_x86 = [
+    "-DX86_AVX2",
+    "-DX86_AVX2_ADLER32",
+    "-DX86_AVX_CHUNKSET",
+    "-DX86_FEATURES",
+    "-DX86_PCLMULQDQ_CRC",
+    "-DX86_SSE2",
+    "-DX86_SSE2_CHUNKSET",
+    "-DX86_SSE2_SLIDEHASH",
+    "-DX86_SSE42_CMP_STR",
+    "-DX86_SSE42_CRC_HASH",
+    "-DX86_SSE42_CRC_INTRIN",
+    "-DX86_SSSE3",
+    "-DX86_SSSE3_ADLER32",
+    "-mavx2",
+    "-msse4",
+    "-mssse3",
+    "-mpclmul",
+]
+
+// This optimization is applicable to arm64 and x86-64.
+cflags_64 = ["-DUNALIGNED64_OK"]
+
+libz_srcs = [
+    "adler32.c",
+    "chunkset.c",
+    "compare258.c",
+    "compress.c",
+    "crc32.c",
+    "crc32_comb.c",
+    "deflate.c",
+    "deflate_fast.c",
+    "deflate_medium.c",
+    "deflate_quick.c",
+    "deflate_slow.c",
+    "functable.c",
+    "infback.c",
+    "inffast.c",
+    "inflate.c",
+    "inftrees.c",
+    "insert_string.c",
+    "trees.c",
+    "uncompr.c",
+    "zutil.c",
+    "gzlib.c",
+    "gzread.c",
+    "gzwrite.c",
+]
+
+cflags_common = [
+    "-DHAVE_BUILTIN_CTZ",
+    "-DHAVE_BUILTIN_CTZLL",
+    "-DHAVE_VISIBILITY_HIDDEN",
+    "-DHAVE_VISIBILITY_INTERNAL",
+    "-DZLIB_CONST",
+
+    "-DWITH_GZFILEOP",
+    "-DZLIB_COMPAT",
+    "-DZLIB_DLL",
+    "-D_LARGEFILE64_SOURCE=1",
+    "-D__USE_LARGEFILE64",
+    "-Wall",
+    "-Werror",
+    "-Wno-implicit-fallthrough",
+    "-O3",
+    "-DNDEBUG",
+    "-fno-semantic-interposition",
+    "-std=c99",
+    "-DUNALIGNED_OK",
+]
+
+cc_defaults {
+    name: "libz_defaults",
+
+    cflags: cflags_common,
+    stl: "none",
+    export_include_dirs: ["."],
+    srcs: libz_srcs,
+
+    arch: {
+        arm: {
+            // TODO: This is to work around b/24465209. Remove after root cause
+            // is fixed.
+            pack_relocations: false,
+            ldflags: ["-Wl,--hash-style=both"],
+
+            cflags: cflags_arm,
+            srcs: srcs_arm,
+        },
+        arm64: {
+            cflags: cflags_arm + cflags_64,
+            srcs: srcs_arm,
+        },
+        x86: {
+            cflags: cflags_x86,
+            srcs: srcs_x86,
+        },
+        x86_64: {
+            cflags: cflags_x86 + cflags_64,
+            srcs: srcs_x86,
+        },
+    },
+}
+
+cc_library {
+    name: "libz",
+    defaults: ["libz_defaults"],
+
+    host_supported: true,
+    unique_host_soname: true,
+    static_ndk_lib: true,
+
+    vendor_available: true,
+    vndk: {
+        enabled: true,
+        support_system_process: true,
+    },
+    ramdisk_available: true,
+    recovery_available: true,
+    native_bridge_supported: true,
+
+    target: {
+        linux_bionic: {
+            enabled: true,
+        },
+        windows: {
+            enabled: true,
+        },
+    },
+
+// TODO(b/155456180): make libz a stub-providing library by uncommenting below
+//    stubs: {
+//        versions: ["29", "30"],
+//        symbol_file: "libz.map.txt",
+//    },
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.art.debug", // from libdexfile
+        "com.android.art.release",
+        "com.android.bluetooth.updatable",
+        "com.android.runtime",
+    ],
+}
+
+// A more stable build of libz. Build configuration of this library should be
+// the same for different targets. This is only used by imgdiff.
+
+cc_library {
+    name: "libz_stable",
+    visibility: [
+        "//bootable/recovery/applypatch",
+        "//bootable/recovery/tests",
+    ],
+    cflags: cflags_common,
+    stl: "none",
+    export_include_dirs: ["."],
+    srcs: libz_srcs,
+
+    host_supported: true,
+    vendor_available: true,
+    recovery_available: true,
+}
+
+cc_binary_host {
+    name: "minigzip",
+    srcs: ["test/minigzip.c"],
+    cflags: cflags_common,
+    static_libs: ["libz"],
+    stl: "none",
+}
+
+// This module is defined in development/ndk/Android.bp. Updating these headers
+// to be usable for any API level is going to be some work (at the very least,
+// there's a ZLIB_VERNUM that will need to be handled since early versions of
+// Android did not have all the APIs that calling code will use if this is set
+// to the current value.
+//
+// The NDK never updated the zlib headers when the platform updated, so until we
+// solve this the NDK will continue shipping the old headers.
+//
+// ndk_headers {
+//     name: "libz_headers",
+//     from: "src",
+//     to: "",
+//     srcs: [
+//         "src/zconf.h",
+//         "src/zlib.h",
+//     ],
+//     license: "NOTICE",
+// }
+
+// TODO(b/155351357) remove this library and let libtextclassifier to use libz
+// instead.
+// libz_current allows modules building against the NDK to have access to zlib
+// API that's not available from the NDK libz.
+cc_library_static {
+    name: "libz_current",
+    defaults: ["libz_defaults"],
+    sdk_version: "current",
+
+    apex_available: [
+        "//apex_available:platform", // indirectly from GoogleExtServices that gets installed to /system
+        "com.android.extservices", // indirectly via libtextclassifier
+    ],
+}
+
+ndk_library {
+    name: "libz",
+    symbol_file: "libz.map.txt",
+    first_version: "9",
+    unversioned_until: "current",
+}
