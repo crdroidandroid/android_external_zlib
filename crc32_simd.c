@@ -176,13 +176,6 @@ uint32_t ZLIB_INTERNAL crc32_sse42_simd_(  /* SSE4.2+PCLMUL */
  * feature for this target (ignoring feature)." This appears to be a harmless
  * bug in clang.
  */
-/* XXX: Cannot hook into builtins with XCode for arm64. */
-#if !defined(ARMV8_OS_MACOS)
-#define __crc32b __builtin_arm_crc32b
-#define __crc32d __builtin_arm_crc32d
-#define __crc32w __builtin_arm_crc32w
-#define __crc32cw __builtin_arm_crc32cw
-#endif
 
 /* We need some extra types for using PMULL.
  */
@@ -214,34 +207,34 @@ uint32_t ZLIB_INTERNAL armv8_crc32_little(unsigned long crc,
     uint32_t c = (uint32_t) ~crc;
 
     while (len && ((uintptr_t)buf & 7)) {
-        c = __crc32b(c, *buf++);
+        c = __builtin_arm_crc32b(c, *buf++);
         --len;
     }
 
     const uint64_t *buf8 = (const uint64_t *)buf;
 
     while (len >= 64) {
-        c = __crc32d(c, *buf8++);
-        c = __crc32d(c, *buf8++);
-        c = __crc32d(c, *buf8++);
-        c = __crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
 
-        c = __crc32d(c, *buf8++);
-        c = __crc32d(c, *buf8++);
-        c = __crc32d(c, *buf8++);
-        c = __crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
         len -= 64;
     }
 
     while (len >= 8) {
-        c = __crc32d(c, *buf8++);
+        c = __builtin_arm_crc32d(c, *buf8++);
         len -= 8;
     }
 
     buf = (const unsigned char *)buf8;
 
     while (len--) {
-        c = __crc32b(c, *buf++);
+        c = __builtin_arm_crc32b(c, *buf++);
     }
 
     return ~c;
