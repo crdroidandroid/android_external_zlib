@@ -58,6 +58,8 @@ cc_defaults {
         // We do support const, so turn that on.
         "-DZLIB_CONST",
         "-DUNALIGNED_OK",
+        // Enable -O3 as per chromium.
+        "-O3",
         "-Wall",
         "-Werror",
         "-Wno-unused",
