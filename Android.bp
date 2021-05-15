@@ -110,6 +110,10 @@ cc_defaults {
             srcs: srcs_x86,
         },
     },
+
+    lto: {
+        thin: true,
+    },
 }
 
 cc_library {
