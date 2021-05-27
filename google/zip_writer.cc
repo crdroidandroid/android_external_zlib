@@ -4,6 +4,8 @@
 
 #include "third_party/zlib/google/zip_writer.h"
 
+#include <algorithm>
+
 #include "base/files/file.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
@@ -13,18 +15,19 @@ namespace zip {
 namespace internal {
 
 bool ZipWriter::ShouldContinue() {
-  if (progress_callback_) {
-    const base::TimeTicks now = base::TimeTicks::Now();
-    if (next_progress_report_time_ <= now) {
-      next_progress_report_time_ = now + progress_period_;
-      if (!progress_callback_.Run(progress_)) {
-        LOG(ERROR) << "Cancelling ZIP creation";
-        return false;
-      }
-    }
-  }
+  if (!progress_callback_)
+    return true;
 
-  return true;
+  const base::TimeTicks now = base::TimeTicks::Now();
+  if (next_progress_report_time_ > now)
+    return true;
+
+  next_progress_report_time_ = now + progress_period_;
+  if (progress_callback_.Run(progress_))
+    return true;
+
+  LOG(ERROR) << "Cancelling ZIP creation";
+  return false;
 }
 
 bool ZipWriter::AddFileContent(const base::FilePath& path, base::File file) {
@@ -71,30 +74,50 @@ bool ZipWriter::CloseNewFileEntry() {
 }
 
 bool ZipWriter::AddFileEntry(const base::FilePath& path, base::File file) {
-  base::File::Info file_info;
-  if (!file.GetInfo(&file_info))
+  base::File::Info info;
+  if (!file.GetInfo(&info))
     return false;
 
-  if (!OpenNewFileEntry(path, /*is_directory=*/false, file_info.last_modified))
+  if (!OpenNewFileEntry(path, /*is_directory=*/false, info.last_modified))
     return false;
 
-  const bool success = AddFileContent(path, std::move(file));
+  if (!AddFileContent(path, std::move(file)))
+    return false;
+
   progress_.files++;
-  return CloseNewFileEntry() && success;
+  return CloseNewFileEntry();
 }
 
-bool ZipWriter::AddDirectoryEntry(const base::FilePath& path,
-                                  base::Time last_modified) {
+bool ZipWriter::AddDirectoryEntry(const base::FilePath& path) {
+  FileAccessor::Info info;
+  if (!file_accessor_->GetInfo(path, &info))
+    return false;
+
+  if (!info.is_directory) {
+    LOG(ERROR) << "Not a directory: '" << path << "'";
+    return false;
+  }
+
+  if (!OpenNewFileEntry(path, /*is_directory=*/true, info.last_modified))
+    return false;
+
+  if (!CloseNewFileEntry())
+    return false;
+
   progress_.directories++;
-  return OpenNewFileEntry(path, /*is_directory=*/true, last_modified) &&
-         CloseNewFileEntry() && ShouldContinue();
+  if (!ShouldContinue())
+    return false;
+
+  if (!recursive_)
+    return true;
+
+  return AddDirectoryContents(path);
 }
 
 #if defined(OS_POSIX)
 // static
 std::unique_ptr<ZipWriter> ZipWriter::CreateWithFd(
     int zip_file_fd,
-    const base::FilePath& root_dir,
     FileAccessor* file_accessor) {
   DCHECK(zip_file_fd != base::kInvalidPlatformFile);
   zipFile zip_file =
@@ -105,15 +128,13 @@ std::unique_ptr<ZipWriter> ZipWriter::CreateWithFd(
     return nullptr;
   }
 
-  return std::unique_ptr<ZipWriter>(
-      new ZipWriter(zip_file, root_dir, file_accessor));
+  return std::unique_ptr<ZipWriter>(new ZipWriter(zip_file, file_accessor));
 }
 #endif
 
 // static
 std::unique_ptr<ZipWriter> ZipWriter::Create(
     const base::FilePath& zip_file_path,
-    const base::FilePath& root_dir,
     FileAccessor* file_accessor) {
   DCHECK(!zip_file_path.empty());
   zipFile zip_file = internal::OpenForZipping(zip_file_path.AsUTF8Unsafe(),
@@ -124,22 +145,15 @@ std::unique_ptr<ZipWriter> ZipWriter::Create(
     return nullptr;
   }
 
-  return std::unique_ptr<ZipWriter>(
-      new ZipWriter(zip_file, root_dir, file_accessor));
+  return std::unique_ptr<ZipWriter>(new ZipWriter(zip_file, file_accessor));
 }
 
-ZipWriter::ZipWriter(zipFile zip_file,
-                     const base::FilePath& root_dir,
-                     FileAccessor* file_accessor)
-    : zip_file_(zip_file), root_dir_(root_dir), file_accessor_(file_accessor) {}
+ZipWriter::ZipWriter(zipFile zip_file, FileAccessor* file_accessor)
+    : zip_file_(zip_file), file_accessor_(file_accessor) {}
 
 ZipWriter::~ZipWriter() {
   if (zip_file_)
     zipClose(zip_file_, nullptr);
-}
-
-bool ZipWriter::WriteEntries(Paths paths) {
-  return AddEntries(paths) && Close();
 }
 
 bool ZipWriter::Close() {
@@ -147,18 +161,65 @@ bool ZipWriter::Close() {
   zip_file_ = nullptr;
 
   // Call the progress callback one last time with the final progress status.
-  //
-  // We don't care about the callback return value (cancellation request), since
-  // we're done anyway.
-  if (progress_callback_)
-    progress_callback_.Run(progress_);
+  if (progress_callback_ && !progress_callback_.Run(progress_)) {
+    LOG(ERROR) << "Cancelling ZIP creation at the end";
+    return false;
+  }
 
   return success;
 }
 
-bool ZipWriter::AddEntries(Paths paths) {
-  // Constructed outside the loop in order to reuse its internal buffer.
-  std::vector<base::FilePath> absolute_paths;
+bool ZipWriter::AddMixedEntries(Paths paths) {
+  // Pointers to directory paths in |paths|.
+  std::vector<const base::FilePath*> directories;
+
+  // Declared outside loop to reuse internal buffer.
+  std::vector<base::File> files;
+
+  // First pass. We don't know which paths are files and which ones are
+  // directories, and we want to avoid making a call to file_accessor_ for each
+  // path. Try to open all of the paths as files. We'll get invalid file
+  // descriptors for directories, and we'll process these directories in the
+  // second pass.
+  while (!paths.empty()) {
+    // Work with chunks of 50 paths at most.
+    const size_t n = std::min<size_t>(paths.size(), 50);
+    const Paths relative_paths = paths.subspan(0, n);
+    paths = paths.subspan(n, paths.size() - n);
+
+    files.clear();
+    if (!file_accessor_->Open(relative_paths, &files) || files.size() != n)
+      return false;
+
+    for (size_t i = 0; i < n; i++) {
+      const base::FilePath& relative_path = relative_paths[i];
+      DCHECK(!relative_path.empty());
+      base::File& file = files[i];
+
+      if (file.IsValid()) {
+        // It's a file.
+        if (!AddFileEntry(relative_path, std::move(file)))
+          return false;
+      } else {
+        // It's probably a directory. Remember its path for the second pass.
+        directories.push_back(&relative_path);
+      }
+    }
+  }
+
+  // Second pass for directories discovered during the first pass.
+  for (const base::FilePath* const path : directories) {
+    DCHECK(path);
+    if (!AddDirectoryEntry(*path))
+      return false;
+  }
+
+  return true;
+}
+
+bool ZipWriter::AddFileEntries(Paths paths) {
+  // Declared outside loop to reuse internal buffer.
+  std::vector<base::File> files;
 
   while (!paths.empty()) {
     // Work with chunks of 50 paths at most.
@@ -166,53 +227,67 @@ bool ZipWriter::AddEntries(Paths paths) {
     const Paths relative_paths = paths.subspan(0, n);
     paths = paths.subspan(n, paths.size() - n);
 
-    // FileAccessor requires absolute paths.
-    absolute_paths.clear();
-    absolute_paths.reserve(n);
-    for (const base::FilePath& relative_path : relative_paths) {
-      absolute_paths.push_back(root_dir_.Append(relative_path));
-    }
-
     DCHECK_EQ(relative_paths.size(), n);
-    DCHECK_EQ(absolute_paths.size(), n);
 
-    // We don't know which paths are files and which ones are directories, and
-    // we want to avoid making a call to file_accessor_ for each entry. Try to
-    // open all of the paths as files. We'll get invalid file descriptors for
-    // directories.
-    std::vector<base::File> files =
-        file_accessor_->OpenFilesForReading(absolute_paths);
-    DCHECK_EQ(files.size(), n);
+    files.clear();
+    if (!file_accessor_->Open(relative_paths, &files) || files.size() != n) {
+      LOG(ERROR) << "Cannot open " << n << " files";
+      return false;
+    }
 
     for (size_t i = 0; i < n; i++) {
       const base::FilePath& relative_path = relative_paths[i];
-      const base::FilePath& absolute_path = absolute_paths[i];
+      DCHECK(!relative_path.empty());
       base::File& file = files[i];
 
-      if (file.IsValid()) {
-        if (!AddFileEntry(relative_path, std::move(file))) {
-          LOG(ERROR) << "Cannot add file '" << relative_path << "' to ZIP";
-          return false;
-        }
-      } else {
-        // Either directory or missing file.
-        const base::Time last_modified =
-            file_accessor_->GetLastModifiedTime(absolute_path);
-        if (last_modified.is_null()) {
-          LOG(ERROR) << "Missing file or directory '" << relative_path << "'";
-          return false;
-        }
-
-        DCHECK(file_accessor_->DirectoryExists(absolute_path));
-        if (!AddDirectoryEntry(relative_path, last_modified)) {
-          LOG(ERROR) << "Cannot add directory '" << relative_path << "' to ZIP";
-          return false;
-        }
+      if (!file.IsValid()) {
+        LOG(ERROR) << "Cannot open '" << relative_path << "'";
+        return false;
       }
+
+      if (!AddFileEntry(relative_path, std::move(file)))
+        return false;
     }
   }
 
   return true;
+}
+
+bool ZipWriter::AddDirectoryEntries(Paths paths) {
+  for (const base::FilePath& path : paths) {
+    if (!AddDirectoryEntry(path))
+      return false;
+  }
+
+  return true;
+}
+
+bool ZipWriter::AddDirectoryContents(const base::FilePath& path) {
+  std::vector<base::FilePath> files, subdirs;
+
+  if (!file_accessor_->List(path, &files, &subdirs))
+    return false;
+
+  Filter(&files);
+  Filter(&subdirs);
+
+  if (!AddFileEntries(files))
+    return false;
+
+  return AddDirectoryEntries(subdirs);
+}
+
+void ZipWriter::Filter(std::vector<base::FilePath>* const paths) {
+  DCHECK(paths);
+
+  if (!filter_callback_)
+    return;
+
+  const auto end = std::remove_if(paths->begin(), paths->end(),
+                                  [this](const base::FilePath& path) {
+                                    return !filter_callback_.Run(path);
+                                  });
+  paths->erase(end, paths->end());
 }
 
 }  // namespace internal
