@@ -56,9 +56,9 @@
 #define HASH_CALC_VAR       h
 #define HASH_CALC_VAR_INIT  uint32_t h = 0
 
-#define UPDATE_HASH         update_hash_acle
-#define INSERT_STRING       insert_string_acle
-#define QUICK_INSERT_STRING quick_insert_string_acle
+#define UPDATE_HASH         TARGET_ARMV8_WITH_CRC update_hash_acle
+#define INSERT_STRING       TARGET_ARMV8_WITH_CRC insert_string_acle
+#define QUICK_INSERT_STRING TARGET_ARMV8_WITH_CRC quick_insert_string_acle
 
 #include "../../insert_string_tpl.h"
 #endif
