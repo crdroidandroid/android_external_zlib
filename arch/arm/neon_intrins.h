@@ -27,6 +27,7 @@
 
 #  ifndef ARM_NEON_HASLD4
 
+#undef vld1q_u16_x4
 static inline uint16x8x4_t vld1q_u16_x4(uint16_t const *a) {
     uint16x8x4_t ret = (uint16x8x4_t) {{
                           vld1q_u16(a),
@@ -36,6 +37,7 @@ static inline uint16x8x4_t vld1q_u16_x4(uint16_t const *a) {
     return ret;
 }
 
+#undef vld1q_u8_x4
 static inline uint8x16x4_t vld1q_u8_x4(uint8_t const *a) {
     uint8x16x4_t ret = (uint8x16x4_t) {{
                           vld1q_u8(a),
@@ -45,6 +47,7 @@ static inline uint8x16x4_t vld1q_u8_x4(uint8_t const *a) {
     return ret;
 }
 
+#undef vst1q_u16_x4
 static inline void vst1q_u16_x4(uint16_t *p, uint16x8x4_t a) {
     vst1q_u16(p, a.val[0]);
     vst1q_u16(p + 8, a.val[1]);

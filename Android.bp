@@ -32,9 +32,12 @@ cflags_arm = [
     "-DARM_NEON",
     "-DARM_NEON_CHUNKSET",
     "-DARM_NEON_SLIDEHASH",
-    "-DARM_NEON_HASLD4",
     "-DARM_ACLE_CRC_HASH",
     "-DARM_NEON_ADLER32",
+]
+
+cflags_arm64 = [
+    "-DARM_NEON_HASLD4",
 ]
 
 srcs_x86 = [
@@ -165,7 +168,7 @@ cc_defaults {
             srcs: srcs_arm,
         },
         arm64: {
-            cflags: cflags_arm,
+            cflags: cflags_arm + cflags_arm64,
             srcs: srcs_arm,
         },
         x86_64: {
