@@ -30,10 +30,7 @@ cflags_arm = [
     "-DARM_AUXV_HAS_CRC32",
     "-DARM_AUXV_HAS_NEON",
     "-DARM_NEON",
-    "-DARM_NEON_CHUNKSET",
-    "-DARM_NEON_SLIDEHASH",
-    "-DARM_ACLE_CRC_HASH",
-    "-DARM_NEON_ADLER32",
+    "-DARM_ACLE",
 ]
 
 cflags_arm64 = [
@@ -61,25 +58,16 @@ srcs_x86 = [
 
 cflags_x86 = [
     "-DX86_AVX2",
-    "-DX86_AVX2_ADLER32",
-    "-DX86_AVX_CHUNKSET",
     // "-DX86_AVX512",
-    // "-DX86_AVX512_ADLER32",
     "-DX86_MASK_INTRIN",
     // "-DX86_AVX512VNNI",
-    // "-DX86_AVX512VNNI_ADLER32",
     "-DX86_FEATURES",
     "-DX86_PCLMULQDQ_CRC",
     // "-DX86_VPCLMULQDQ_CRC", 
     "-DX86_SSE2",
-    "-DX86_SSE2_CHUNKSET",
-    "-DX86_SSE2_SLIDEHASH",
     "-DX86_SSE41",
-    "-DX86_SSE42_ADLER32",
-    "-DX86_SSE42_CRC_HASH",
-    "-DX86_SSE42_CRC_INTRIN",
+    "-DX86_SSE42",
     "-DX86_SSSE3",
-    "-DX86_SSSE3_ADLER32",
     "-mavx2",
     // "-mavx512vnni",
     // "-mavx512f",
@@ -139,14 +127,10 @@ cflags_common = [
     "-DZLIB_DLL",
     "-D_LARGEFILE64_SOURCE=1",
     "-D__USE_LARGEFILE64",
-    "-Wall",
-    "-Werror",
-    "-Wno-implicit-fallthrough",
     "-Wno-unused-command-line-argument",
     "-O3",
     "-DNDEBUG",
     "-fno-semantic-interposition",
-    "-std=c11",
 ]
 
 cc_defaults {
@@ -186,6 +170,7 @@ cc_defaults {
     lto: {
         thin: true,
     },
+    c_std: "c11",
 }
 
 cc_library {
