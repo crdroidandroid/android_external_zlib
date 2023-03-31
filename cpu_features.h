@@ -6,6 +6,12 @@
 #ifndef CPU_FEATURES_H_
 #define CPU_FEATURES_H_
 
+#ifdef ZLIB_COMPAT
+#  include "zlib.h"
+#else
+#  include "zlib-ng.h"
+#endif
+
 #include "adler32_fold.h"
 #include "crc32_fold.h"
 
@@ -113,12 +119,6 @@ extern uint8_t* chunkmemset_safe_neon(uint8_t *out, unsigned dist, unsigned len,
 #ifdef POWER8_VSX
 extern uint32_t chunksize_power8(void);
 extern uint8_t* chunkmemset_safe_power8(uint8_t *out, unsigned dist, unsigned len, unsigned left);
-#endif
-
-#ifdef ZLIB_COMPAT
-typedef struct z_stream_s z_stream;
-#else
-typedef struct zng_stream_s zng_stream;
 #endif
 
 /* inflate fast loop */

@@ -10,12 +10,6 @@
 #include "crc32_fold.h"
 #include "adler32_fold.h"
 
-#ifdef ZLIB_COMPAT
-typedef struct z_stream_s z_stream;
-#else
-typedef struct zng_stream_s zng_stream;
-#endif
-
 struct functable_s {
     uint32_t (* adler32)            (uint32_t adler, const uint8_t *buf, size_t len);
     uint32_t (* adler32_fold_copy)  (uint32_t adler, uint8_t *dst, const uint8_t *src, size_t len);
