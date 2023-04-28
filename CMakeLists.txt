@@ -117,7 +117,6 @@ elseif(BASEARCH_X86_FOUND)
     option(WITH_AVX512VNNI "Build with AVX512 VNNI extensions" ON)
     option(WITH_SSE2 "Build with SSE2" ON)
     option(WITH_SSSE3 "Build with SSSE3" ON)
-    option(WITH_SSE41 "Build with SSE41" ON)
     option(WITH_SSE42 "Build with SSE42" ON)
     option(WITH_PCLMULQDQ "Build with PCLMULQDQ" ON)
     option(WITH_VPCLMULQDQ "Build with VPCLMULQDQ" ON)
@@ -133,8 +132,7 @@ mark_as_advanced(FORCE
     WITH_DFLTCC_INFLATE
     WITH_CRC32_VX
     WITH_AVX2 WITH_SSE2
-    WITH_SSSE3 WITH_SSE41
-    WITH_SSE42
+    WITH_SSSE3 WITH_SSE42
     WITH_PCLMULQDQ
     WITH_ALTIVEC
     WITH_POWER8
@@ -333,18 +331,21 @@ check_function_exists(fseeko HAVE_FSEEKO)
 if(NOT HAVE_FSEEKO)
     add_definitions(-DNO_FSEEKO)
 endif()
+
 check_function_exists(strerror HAVE_STRERROR)
 if(NOT HAVE_STRERROR)
     add_definitions(-DNO_STRERROR)
 endif()
+
 set(CMAKE_REQUIRED_DEFINITIONS -D_POSIX_C_SOURCE=200112L)
-check_function_exists(posix_memalign HAVE_POSIX_MEMALIGN)
+check_symbol_exists(posix_memalign stdlib.h HAVE_POSIX_MEMALIGN)
 if(HAVE_POSIX_MEMALIGN)
     add_definitions(-DHAVE_POSIX_MEMALIGN)
 endif()
 set(CMAKE_REQUIRED_DEFINITIONS)
+
 set(CMAKE_REQUIRED_DEFINITIONS -D_ISOC11_SOURCE=1)
-check_function_exists(aligned_alloc HAVE_ALIGNED_ALLOC)
+check_symbol_exists(aligned_alloc stdlib.h HAVE_ALIGNED_ALLOC)
 if(HAVE_ALIGNED_ALLOC)
     add_definitions(-DHAVE_ALIGNED_ALLOC)
 endif()
@@ -391,6 +392,20 @@ check_c_source_compiles(
     HAVE_ATTRIBUTE_VISIBILITY_INTERNAL FAIL_REGEX "visibility")
 if(HAVE_ATTRIBUTE_VISIBILITY_INTERNAL)
     add_definitions(-DHAVE_VISIBILITY_INTERNAL)
+endif()
+
+#
+# Check for __attribute__((aligned(x))) support in the compiler
+#
+check_c_source_compiles(
+    "int main(void) {
+        __attribute__((aligned(8))) int test = 0;
+        (void)test;
+        return 0;
+    }"
+    HAVE_ATTRIBUTE_ALIGNED FAIL_REGEX "aligned")
+if(HAVE_ATTRIBUTE_ALIGNED)
+    add_definitions(-DHAVE_ATTRIBUTE_ALIGNED)
 endif()
 
 #
@@ -747,8 +762,8 @@ if(WITH_OPTIM)
                 add_definitions(-DX86_AVX2)
                 set(AVX2_SRCS ${ARCHDIR}/slide_hash_avx2.c)
                 add_feature_info(AVX2_SLIDEHASH 1 "Support AVX2 optimized slide_hash, using \"${AVX2FLAG}\"")
-                list(APPEND AVX2_SRCS ${ARCHDIR}/chunkset_avx.c)
-                add_feature_info(AVX_CHUNKSET 1 "Support AVX optimized chunkset, using \"${AVX2FLAG}\"")
+                list(APPEND AVX2_SRCS ${ARCHDIR}/chunkset_avx2.c)
+                add_feature_info(AVX2_CHUNKSET 1 "Support AVX2 optimized chunkset, using \"${AVX2FLAG}\"")
                 list(APPEND AVX2_SRCS ${ARCHDIR}/compare256_avx2.c)
                 add_feature_info(AVX2_COMPARE256 1 "Support AVX2 optimized compare256, using \"${AVX2FLAG}\"")
                 list(APPEND AVX2_SRCS ${ARCHDIR}/adler32_avx2.c)
@@ -787,17 +802,6 @@ if(WITH_OPTIM)
                 set(WITH_AVX512VNNI OFF)
             endif()
         endif()
-        if(WITH_SSE41)
-            check_sse41_intrinsics()
-            if(HAVE_SSE41_INTRIN)
-                add_definitions(-DX86_SSE41)
-                list(APPEND SSE41_SRCS ${ARCHDIR}/chunkset_sse41.c)
-                list(APPEND ZLIB_ARCH_SRCS ${SSE41_SRCS})
-                set_property(SOURCE ${SSE41_SRCS} PROPERTY COMPILE_FLAGS "${SSE41FLAG} ${NOLTOFLAG}")
-            else()
-                set(WITH_SSE41 OFF)
-            endif()
-        endif()
         if(WITH_SSE42)
             check_sse42_intrinsics()
             if(HAVE_SSE42CRC_INLINE_ASM OR HAVE_SSE42CRC_INTRIN)
@@ -809,9 +813,8 @@ if(WITH_OPTIM)
                 if(HAVE_SSE42CRC_INTRIN)
                     add_definitions(-DX86_SSE42_CRC_INTRIN)
                 endif()
-            endif()
-            if(NOT HAVE_SSE42CRC_INLINE_ASM AND NOT HAVE_SSE42CRC_INTRIN AND NOT HAVE_SSE42CMPSTR_INTRIN)
-                set(WITH_SSE4 OFF)
+            else()
+                set(WITH_SSE42 OFF)
             endif()
         endif()
         if(WITH_SSE2)
@@ -835,7 +838,7 @@ if(WITH_OPTIM)
             check_ssse3_intrinsics()
             if(HAVE_SSSE3_INTRIN)
                 add_definitions(-DX86_SSSE3)
-                set(SSSE3_SRCS ${ARCHDIR}/adler32_ssse3.c)
+                set(SSSE3_SRCS ${ARCHDIR}/adler32_ssse3.c ${ARCHDIR}/chunkset_ssse3.c)
                 add_feature_info(SSSE3_ADLER32 1 "Support SSSE3-accelerated adler32, using \"${SSSE3FLAG}\"")
                 list(APPEND ZLIB_ARCH_SRCS ${SSSE3_SRCS})
                 set_property(SOURCE ${SSSE3_SRCS} PROPERTY COMPILE_FLAGS "${SSSE3FLAG} ${NOLTOFLAG}")
@@ -927,15 +930,26 @@ endif()
 
 # Refer to prefix symbolically to ease relocation by end user,
 # as Makefile-generated .pc file does.
-if(INC_INSTALL_DIR STREQUAL "${CMAKE_INSTALL_PREFIX}/include")
-  set(PC_INC_INSTALL_DIR "\${prefix}/include")
+string(FIND "${CMAKE_INSTALL_INCLUDEDIR}" "${CMAKE_INSTALL_PREFIX}/" INCLUDEDIR_POS)
+string(FIND "${CMAKE_INSTALL_LIBDIR}" "${CMAKE_INSTALL_PREFIX}/" LIBDIR_POS)
+string(LENGTH "${CMAKE_INSTALL_PREFIX}/" INSTALL_PREFIX_LEN)
+
+if(NOT IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
+  set(PC_INC_INSTALL_DIR "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
+elseif(INCLUDEDIR_POS EQUAL 0)
+  string(SUBSTRING "${CMAKE_INSTALL_INCLUDEDIR}" "${INSTALL_PREFIX_LEN}" "-1" INCLUDEDIR_RELATIVE)
+  set(PC_INC_INSTALL_DIR "\${prefix}/${INCLUDEDIR_RELATIVE}")
 else()
-  set(PC_INC_INSTALL_DIR "${INC_INSTALL_DIR}")
+  set(PC_INC_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
-if(LIB_INSTALL_DIR STREQUAL "${CMAKE_INSTALL_PREFIX}/lib")
-  set(PC_LIB_INSTALL_DIR "\${exec_prefix}/lib")
+
+if(NOT IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+  set(PC_LIB_INSTALL_DIR "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+elseif(LIBDIR_POS EQUAL 0)
+  string(SUBSTRING "${CMAKE_INSTALL_LIBDIR}" "${INSTALL_PREFIX_LEN}" "-1" LIBDIR_RELATIVE)
+  set(PC_LIB_INSTALL_DIR "\${exec_prefix}/${LIBDIR_RELATIVE}")
 else()
-  set(PC_LIB_INSTALL_DIR "${LIB_INSTALL_DIR}")
+  set(PC_LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}")
 endif()
 
 #============================================================================
@@ -1099,10 +1113,10 @@ if(NOT DEFINED BUILD_SHARED_LIBS OR BUILD_SHARED_LIBS)
                 "-Wl,--version-script,\"${CMAKE_CURRENT_SOURCE_DIR}/zlib${SUFFIX}.map\"")
         else()
             # Match configure/make's behavior (i.e. don't use @rpath on mac).
-            set_target_properties(zlib PROPERTIES INSTALL_NAME_DIR "${LIB_INSTALL_DIR}")
+            set_target_properties(zlib PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_FULL_LIBDIR}")
         endif()
     endif()
-    if(MSYS OR CYGWIN)
+    if(MSYS)
         # Suppress version number from shared library name
         set(CMAKE_SHARED_LIBRARY_NAME_WITH_VERSION 0)
     elseif(WIN32)
@@ -1151,17 +1165,17 @@ endif()
 
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
     install(TARGETS ${ZLIB_INSTALL_LIBRARIES}
-        RUNTIME DESTINATION "${BIN_INSTALL_DIR}"
-        ARCHIVE DESTINATION "${LIB_INSTALL_DIR}"
-        LIBRARY DESTINATION "${LIB_INSTALL_DIR}")
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 endif()
 if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/zlib${SUFFIX}.h
-        DESTINATION "${INC_INSTALL_DIR}" RENAME zlib${SUFFIX}.h)
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}" RENAME zlib${SUFFIX}.h)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/zlib_name_mangling${SUFFIX}.h
-        DESTINATION "${INC_INSTALL_DIR}" RENAME zlib_name_mangling${SUFFIX}.h)
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}" RENAME zlib_name_mangling${SUFFIX}.h)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/zconf${SUFFIX}.h
-        DESTINATION "${INC_INSTALL_DIR}" RENAME zconf${SUFFIX}.h)
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}" RENAME zconf${SUFFIX}.h)
 endif()
 if(NOT SKIP_INSTALL_FILES AND NOT SKIP_INSTALL_ALL)
     install(FILES ${ZLIB_PC} DESTINATION "${PKGCONFIG_INSTALL_DIR}")
@@ -1226,7 +1240,6 @@ elseif(BASEARCH_X86_FOUND)
     add_feature_info(WITH_AVX512VNNI WITH_AVX512VNNI "Build with AVX512 VNNI")
     add_feature_info(WITH_SSE2 WITH_SSE2 "Build with SSE2")
     add_feature_info(WITH_SSSE3 WITH_SSSE3 "Build with SSSE3")
-    add_feature_info(WITH_SSE41 WITH_SSE41 "Build with SSE41")
     add_feature_info(WITH_SSE42 WITH_SSE42 "Build with SSE42")
     add_feature_info(WITH_PCLMULQDQ WITH_PCLMULQDQ "Build with PCLMULQDQ")
     add_feature_info(WITH_VPCLMULQDQ WITH_VPCLMULQDQ "Build with VPCLMULQDQ")

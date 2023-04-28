@@ -8,6 +8,9 @@
 #ifndef _ISOC11_SOURCE
 #  define _ISOC11_SOURCE 1 /* aligned_alloc */
 #endif
+#ifdef __OpenBSD__
+#  define _BSD_SOURCE 1
+#endif
 
 #include <stddef.h>
 #include <string.h>
@@ -190,7 +193,7 @@
 #  define UNLIKELY(x)           x
 #endif /* (un)likely */
 
-#if defined(__clang__) || defined(__GNUC__)
+#if defined(HAVE_ATTRIBUTE_ALIGNED)
 #  define ALIGNED_(x) __attribute__ ((aligned(x)))
 #elif defined(_MSC_VER)
 #  define ALIGNED_(x) __declspec(align(x))
